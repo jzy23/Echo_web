@@ -1,0 +1,137 @@
+:root {
+  --section-eyebrow-color: #8ba7c6;
+  --section-title-color: #0c2c50;
+  --section-description-color: #69839f;
+  color: #0d223a;
+  background: #f5f8fb;
+  font-family: Inter, "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizelegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  background: #f5f8fb;
+}
+
+body.menu-open {
+  overflow: hidden;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid #23b7e5;
+  outline-offset: 3px;
+}
+
+.site-shell {
+  min-height: 100vh;
+}
+
+.page-stage {
+  display: block;
+  padding: 32px 0 56px;
+  background: #f5f8fb;
+}
+
+.homepage-section {
+  padding: clamp(58px, 7vw, 92px) 0 clamp(64px, 7vw, 94px);
+}
+
+.section-inner {
+  width: min(calc(100% - 48px), 1240px);
+  margin-inline: auto;
+}
+
+.section-eyebrow {
+  display: block;
+  margin-bottom: var(--section-eyebrow-margin-bottom, 12px);
+  color: var(--section-eyebrow-color);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.section-title {
+  margin: 0;
+  color: var(--section-title-color);
+  font-size: clamp(30px, var(--section-title-fluid-size, 3.25vw), var(--section-title-max-size, 44px));
+  font-weight: var(--section-title-font-weight, 720);
+  letter-spacing: -0.055em;
+  line-height: var(--section-title-line-height, 1.2);
+}
+
+.section-description {
+  max-width: 920px;
+  margin: var(--section-description-margin-top, 14px) 0 0;
+  color: var(--section-description-color);
+  font-size: var(--section-description-font-size, 14px);
+  line-height: var(--section-description-line-height, 1.8);
+}
+
+@media (max-width: 900px) {
+  .page-stage {
+    padding: 18px 0 40px;
+  }
+
+  .section-inner {
+    width: min(calc(100% - 40px), 680px);
+  }
+}
+
+@media (max-width: 680px) {
+  .homepage-section {
+    padding-block: 54px 62px;
+  }
+
+  .section-inner {
+    width: calc(100% - 40px);
+  }
+
+  .section-title {
+    font-size: 32px;
+  }
+
+  .section-description {
+    font-size: 13px;
+  }
+
+  .desktop-break {
+    display: none;
+  }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  margin: -1px;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
