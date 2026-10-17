@@ -1,109 +1,219 @@
-# 生产部署
+# Windows Server 生产部署
 
-生产环境保持单一入口，由 Nginx 分发前端静态资源和 Django API：
+生产环境部署在阿里云 Windows Server，保持单一公网入口：
 
 ```text
 浏览器
    ↓
-Nginx
+Nginx for Windows
    ├─ /          → frontend/dist
-   └─ /api/      → Gunicorn → Django
+   └─ /api/      → Waitress（127.0.0.1:8000）→ Django
 ```
 
-当前配置接口继续使用 Django `JsonResponse`，不引入 Django REST Framework。出现后台内容管理、表单提交、案例 CRUD、认证或文件上传后，再评估 DRF。
+Gunicorn 不支持 Windows，因此生产依赖使用 Waitress。Waitress 只监听本机回环地址，公网仅开放 Nginx 的 80/443 端口。
 
-## 更新流程
+以下示例使用固定路径：
 
-```bash
-git pull --ff-only origin main
+- 项目：`C:\Sites\Echo_web`
+- Nginx：`C:\nginx`
+- 生产环境变量：`C:\EchoSim\echosim.env.ps1`
 
-source .venv/bin/activate
-pip install -r requirements-production.txt
-python manage.py migrate
-python manage.py collectstatic --noinput
+## 一、服务器前置软件
 
-cd frontend
+安装并加入 `PATH`：
+
+- Git for Windows
+- Python 3.11 或更高版本
+- Node.js 22
+- pnpm
+- Nginx for Windows
+
+管理员 PowerShell 中检查：
+
+```powershell
+git --version
+python --version
+node --version
+pnpm --version
+```
+
+如缺少 pnpm：
+
+```powershell
+npm install -g pnpm
+```
+
+将 Nginx 官方 ZIP 解压并整理到 `C:\nginx`。
+
+## 二、首次拉取与构建
+
+```powershell
+New-Item -ItemType Directory -Force C:\Sites
+Set-Location C:\Sites
+git clone https://github.com/jzy23/Echo_web.git
+Set-Location C:\Sites\Echo_web
+
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements-production.txt
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py collectstatic --noinput
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py test
+
+Set-Location frontend
 pnpm install --frozen-lockfile
 pnpm build
-cd ..
-
-sudo systemctl restart echosim
-sudo systemctl reload nginx
+Set-Location ..
 ```
 
-## Django 环境变量
+如果仓库为私有仓库，服务器应使用 GitHub 只读 Deploy Key，避免在服务器保存个人账号密码。
 
-生产环境至少配置：
+## 三、生产环境变量
 
-```bash
-DJANGO_DEBUG=false
-DJANGO_SECRET_KEY=<随机长密钥>
-DJANGO_ALLOWED_HOSTS=www.example.com,example.com
-DJANGO_SECURE_SSL_REDIRECT=true
-DJANGO_SESSION_COOKIE_SECURE=true
-DJANGO_CSRF_COOKIE_SECURE=true
-DJANGO_SECURE_HSTS_SECONDS=31536000
-DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS=true
-DJANGO_SECURE_HSTS_PRELOAD=true
+生成随机密钥：
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(64))"
 ```
 
-建议由 systemd 的 `EnvironmentFile` 读取这些值，不要把密钥提交到仓库。
+复制示例文件到仓库外部：
 
-开发环境默认不强制 HTTPS，安全 Cookie 和 HSTS 也默认关闭。生产环境必须设置
-`DJANGO_SECRET_KEY`，否则 Django 会在启动时明确失败。只有确认主域名和所有需要覆盖的
-子域名均已全站启用 HTTPS 后，才能设置 `DJANGO_SECURE_HSTS_SECONDS`；首次启用时可先用
-较短时间验证，再逐步提高。`includeSubDomains` 和 `preload` 的影响更难撤销，启用前应单独评估。
-
-## Gunicorn 服务示例
-
-```ini
-[Unit]
-Description=EchoSim Django service
-After=network.target
-
-[Service]
-User=www-data
-Group=www-data
-WorkingDirectory=/srv/echosim
-EnvironmentFile=/etc/echosim.env
-ExecStart=/srv/echosim/.venv/bin/gunicorn --workers 3 --bind 127.0.0.1:8000 config.wsgi:application
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
+```powershell
+New-Item -ItemType Directory -Force C:\EchoSim
+Copy-Item .\deploy\windows\echosim.env.ps1.example C:\EchoSim\echosim.env.ps1
+notepad C:\EchoSim\echosim.env.ps1
 ```
 
-## Nginx 示例
+将其中的公网 IP、域名和随机密钥替换为真实值。该文件包含生产密钥，不得复制回仓库或提交 Git。
 
-```nginx
-server {
-    listen 80;
-    server_name www.example.com example.com;
+首次仅使用公网 IP 和 HTTP 验证时，保持 HTTPS、Secure Cookie 和 HSTS 开关关闭。配置证书后再启用相关安全项。
 
-    return 301 https://$host$request_uri;
-}
+## 四、启动 Waitress
 
-server {
-    listen 443 ssl;
-    server_name www.example.com example.com;
+手动验证：
 
-    ssl_certificate /path/to/your/fullchain.pem;
-    ssl_certificate_key /path/to/your/privkey.pem;
-
-    root /srv/echosim/frontend/dist;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
+```powershell
+Set-Location C:\Sites\Echo_web
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\start-waitress.ps1
 ```
 
-证书的申请、续期和权限管理由部署环境负责；此处只展示 Nginx 配置，不安装或调用 Certbot。
+另开一个 PowerShell 窗口测试：
 
+```powershell
+curl.exe http://127.0.0.1:8000/api/site-config/
+```
+
+测试通过后注册开机任务：
+
+```powershell
+$action = New-ScheduledTaskAction `
+    -Execute "powershell.exe" `
+    -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Sites\Echo_web\deploy\windows\start-waitress.ps1"'
+
+$trigger = New-ScheduledTaskTrigger -AtStartup
+
+Register-ScheduledTask `
+    -TaskName "EchoSim-Django" `
+    -Action $action `
+    -Trigger $trigger `
+    -User "SYSTEM" `
+    -RunLevel Highest
+
+Start-ScheduledTask -TaskName "EchoSim-Django"
+```
+
+## 五、配置 Nginx
+
+仓库提供了基础配置。首次安装时复制到 Nginx：
+
+```powershell
+Copy-Item C:\Sites\Echo_web\deploy\windows\nginx.conf C:\nginx\conf\nginx.conf -Force
+Set-Location C:\nginx
+.\nginx.exe -t
+Start-Process .\nginx.exe
+```
+
+测试统一入口：
+
+```powershell
+curl.exe http://127.0.0.1/
+curl.exe http://127.0.0.1/api/site-config/
+```
+
+注册 Nginx 开机任务：
+
+```powershell
+$action = New-ScheduledTaskAction `
+    -Execute "C:\nginx\nginx.exe" `
+    -WorkingDirectory "C:\nginx"
+
+$trigger = New-ScheduledTaskTrigger -AtStartup
+
+Register-ScheduledTask `
+    -TaskName "EchoSim-Nginx" `
+    -Action $action `
+    -Trigger $trigger `
+    -User "SYSTEM" `
+    -RunLevel Highest
+```
+
+Nginx 配置中的 Windows 路径必须使用正斜杠，例如 `C:/Sites/Echo_web/frontend/dist`。
+
+## 六、防火墙与安全组
+
+Windows 防火墙开放 HTTP：
+
+```powershell
+New-NetFirewallRule `
+    -DisplayName "EchoSim HTTP" `
+    -Direction Inbound `
+    -Protocol TCP `
+    -LocalPort 80 `
+    -Action Allow
+```
+
+阿里云安全组开放 80；配置 HTTPS 后再开放 443。远程桌面 3389 只允许管理员固定 IP，不开放 Waitress 的 8000 端口。
+
+## 七、后续更新
+
+本机完成修改并推送 GitHub 后，在服务器管理员 PowerShell 执行：
+
+```powershell
+Set-Location C:\Sites\Echo_web
+git pull --ff-only origin main
+
+.\.venv\Scripts\python.exe -m pip install -r requirements-production.txt
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py collectstatic --noinput
+.\.venv\Scripts\python.exe manage.py check
+
+Set-Location frontend
+pnpm install --frozen-lockfile
+pnpm build
+Set-Location ..
+
+Stop-ScheduledTask -TaskName "EchoSim-Django" -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+Start-ScheduledTask -TaskName "EchoSim-Django"
+```
+
+前端构建完成后 Nginx 会直接读取新文件，不需要重启。仅在修改 `nginx.conf` 后执行：
+
+```powershell
+Set-Location C:\nginx
+.\nginx.exe -t
+.\nginx.exe -s reload
+```
+
+## 八、故障排查
+
+```powershell
+Get-ScheduledTask -TaskName "EchoSim-Django", "EchoSim-Nginx"
+Get-Process nginx -ErrorAction SilentlyContinue
+Get-Content C:\nginx\logs\error.log -Tail 100
+curl.exe http://127.0.0.1:8000/api/site-config/
+curl.exe http://127.0.0.1/api/site-config/
+```
+
+先确认公网 IP 的 HTTP 访问正常，再继续配置域名、ICP备案、HTTPS 证书和 HSTS。

@@ -24,7 +24,7 @@ pnpm dev
 
 站点导航、品牌和联系方式以 Django `/api/site-config/` 为唯一数据源。请求期间显示页面骨架；API 不可用时显示可重试错误页。
 
-生产部署采用 Nginx + Gunicorn，详见 [`docs/deployment.md`](docs/deployment.md)。
+生产部署面向阿里云 Windows Server，采用 Nginx + Waitress，详见 [`docs/deployment.md`](docs/deployment.md)。
 
 ## 目录
 
